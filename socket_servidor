@@ -1,0 +1,80 @@
+import socket
+import threading
+
+# 📋 Lista de sockets y diccionario para asociar Socket -> Nombre
+clientes = []
+nombres = {}
+
+def difundir(mensaje, cliente_remitente=None):
+    """Envía un mensaje a todos los conectados."""
+    for cliente in clientes:
+        # Si queremos que el remitente no reciba su propio mensaje, 
+        # mantenemos la validación. Si es un aviso del sistema, enviamos a todos.
+        if cliente != cliente_remitente:
+            try:
+                cliente.send(mensaje.encode('utf-8'))
+            except:
+                remover_cliente(cliente)
+
+def remover_cliente(cliente):
+    """Limpia los datos del cliente al desconectarse."""
+    if cliente in clientes:
+        nombre = nombres.get(cliente, "Alguien")
+        clientes.remove(cliente)
+        if cliente in nombres:
+            del nombres[cliente]
+        # 📢 Avisar a todos que alguien se fue
+        difundir(f"📢 {nombre} ha salido del chat.")
+
+def manejar_cliente(sc, addr):
+    try:
+        # 1. Pedir nombre de usuario al conectar
+        sc.send("BIENVENIDO. Por favor, ingresa tu nombre: ".encode('utf-8'))
+        nombre = sc.recv(1024).decode('utf-8').strip()
+        
+        # Guardar datos
+        nombres[sc] = nombre
+        clientes.append(sc)
+        
+        # 📢 Avisar a todos que alguien entró
+        print(f"✅ {nombre} se unió desde {addr}")
+        difundir(f"📢 {nombre} se ha unido al chat!", sc)
+        
+        # 2. Bucle de mensajes
+        while True:
+            recibido = sc.recv(1024)
+            if not recibido:
+                break
+                
+            mensaje = recibido.decode('utf-8').strip()
+            
+            if mensaje.lower() == "exit":
+                break
+                
+            # 📢 Broadcast del mensaje con el nombre
+            formato = f"{nombre}: {mensaje}"
+            print(formato)
+            difundir(formato, sc)
+            
+    except Exception as e:
+        print(f"❌ Error con {addr}: {e}")
+    finally:
+        remover_cliente(sc)
+        sc.close()
+
+def iniciar_servidor():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+    # 0.0.0.0 para aceptar conexiones de cualquier red
+    s.bind(("0.0.0.0", 9999))
+    s.listen(10)
+    print("🚀 Servidor de Chat con Nombres iniciado en el puerto 9999")
+
+    while True:
+        sc, addr = s.accept()
+        hilo = threading.Thread(target=manejar_cliente, args=(sc, addr))
+        hilo.start()
+
+if __name__ == "__main__":
+    iniciar_servidor()
